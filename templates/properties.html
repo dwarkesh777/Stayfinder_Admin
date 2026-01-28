@@ -44,6 +44,7 @@ body {
     height: 200px;
     overflow: hidden;
     background: #f0f0f0;
+    position: relative;
 }
 .property-card img {
     width: 100%;
@@ -68,6 +69,11 @@ body {
     top: 10px;
     right: 10px;
 }
+.badge-status {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+}
 .amenity-badge {
     font-size: 0.75rem;
     padding: 5px 10px;
@@ -85,6 +91,17 @@ body {
     color: #1976d2;
     font-weight: bold;
     font-size: 1.3rem;
+}
+.action-buttons {
+    gap: 8px;
+    margin-top: 10px;
+}
+.action-buttons form {
+    flex: 1;
+}
+.action-buttons button {
+    width: 100%;
+    font-size: 0.85rem;
 }
 {% endblock %}
 
@@ -147,6 +164,22 @@ body {
                         {{ property.gender }}
                     </span>
                     {% endif %}
+                    
+                    {% if property.status %}
+                        {% if property.status == 'approved' %}
+                        <span class="badge bg-success badge-status">
+                            <i class="bi bi-check-circle"></i> Approved
+                        </span>
+                        {% elif property.status == 'rejected' %}
+                        <span class="badge bg-danger badge-status">
+                            <i class="bi bi-x-circle"></i> Rejected
+                        </span>
+                        {% else %}
+                        <span class="badge bg-warning badge-status">
+                            <i class="bi bi-clock"></i> Pending
+                        </span>
+                        {% endif %}
+                    {% endif %}
                 </div>
                 
                 <div class="card-body">
@@ -200,6 +233,29 @@ body {
                             <i class="bi bi-eye"></i> View
                         </button>
                     </div>
+                    
+                    {% if property.status != 'approved' and property.status != 'rejected' %}
+                    <div class="action-buttons d-flex mt-3">
+                        <form method="POST" action="{{ url_for('approve_property', hostel_id=property.id) }}" style="flex: 1;">
+                            <button type="submit" class="btn btn-success btn-sm w-100">
+                                <i class="bi bi-check-circle"></i> Approve
+                            </button>
+                        </form>
+                        <form method="POST" action="{{ url_for('reject_property', hostel_id=property.id) }}" style="flex: 1;">
+                            <button type="submit" class="btn btn-danger btn-sm w-100">
+                                <i class="bi bi-x-circle"></i> Reject
+                            </button>
+                        </form>
+                    </div>
+                    {% elif property.status == 'approved' %}
+                    <div class="alert alert-success mb-0 mt-2 py-2">
+                        <i class="bi bi-check-circle"></i> This property is approved
+                    </div>
+                    {% elif property.status == 'rejected' %}
+                    <div class="alert alert-danger mb-0 mt-2 py-2">
+                        <i class="bi bi-x-circle"></i> This property is rejected
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>

@@ -140,6 +140,9 @@ def admin_properties():
             prop['id'] = str(hostel_id)
         except Exception:
             prop['id'] = ''
+        # Set default status if not present
+        if 'status' not in prop:
+            prop['status'] = 'pending'
     
     return render_template('properties.html', admin=admin, properties=properties)
 
@@ -169,6 +172,28 @@ def api_ratings(hostel_id):
         avg = 0
         count = 0
     return {'avg': avg, 'count': count}
+
+@app.route('/admin/property/<hostel_id>/approve', methods=['POST'])
+@login_required
+def approve_property(hostel_id):
+    try:
+        hostel_id_obj = ObjectId(hostel_id)
+        hostels_collection.update_one({'_id': hostel_id_obj}, {'$set': {'status': 'approved', 'updated_at': datetime.now()}})
+        flash(f'Property approved successfully!', 'success')
+    except Exception as e:
+        flash(f'Error approving property: {str(e)}', 'error')
+    return redirect(url_for('admin_properties'))
+
+@app.route('/admin/property/<hostel_id>/reject', methods=['POST'])
+@login_required
+def reject_property(hostel_id):
+    try:
+        hostel_id_obj = ObjectId(hostel_id)
+        hostels_collection.update_one({'_id': hostel_id_obj}, {'$set': {'status': 'rejected', 'updated_at': datetime.now()}})
+        flash(f'Property rejected successfully!', 'error')
+    except Exception as e:
+        flash(f'Error rejecting property: {str(e)}', 'error')
+    return redirect(url_for('admin_properties'))
 
 if __name__ == '__main__':
     app.run(debug=True)
