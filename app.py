@@ -63,15 +63,16 @@ def admin_login():
     if request.method == 'POST':
         email = request.form.get('email')
         password = request.form.get('password')
+        admin_key = request.form.get('admin_key')
         
         admin = admins_collection.find_one({'email': email})
         
-        if admin and check_password_hash(admin['password'], password):
+        if admin and check_password_hash(admin['password'], password) and check_password_hash(admin.get('admin_key', ''), admin_key):
             session['admin_id'] = str(admin['_id'])
             session['admin_name'] = admin['name']
             return redirect(url_for('admin_dashboard'))
         
-        flash('Invalid email or password', 'error')
+        flash('Invalid email, password, or admin key', 'error')
     
     return render_template('login.html')
 
