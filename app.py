@@ -33,6 +33,7 @@ db = client['stayfinder']
 admins_collection = db['admins']
 hostels_collection = db['hostels']
 ratings_collection = db['ratings']
+users_collection = db['users']
 
 # Auth decorator
 def login_required(f):
@@ -145,6 +146,32 @@ def admin_properties():
             prop['status'] = 'pending'
     
     return render_template('properties.html', admin=admin, properties=properties)
+
+
+@app.route('/admin/users')
+@login_required
+def admin_users():
+    try:
+        admin = admins_collection.find_one({'_id': ObjectId(session['admin_id'])})
+        # Fetch only owners from users collection
+        owners = list(users_collection.find({'user_type': 'owner'}))
+
+        # Normalize owner records for template
+        for owner in owners:
+            try:
+                owner['id'] = str(owner.get('_id'))
+            except Exception:
+                owner['id'] = ''
+            # provide some safe defaults
+            owner['name'] = owner.get('name') or owner.get('full_name') or 'Unnamed'
+            owner['email'] = owner.get('email', 'N/A')
+            owner['phone'] = owner.get('phone', owner.get('mobile', 'N/A'))
+            owner['created_at'] = owner.get('created_at', '')
+
+        return render_template('users.html', admin=admin, owners=owners)
+    except Exception as e:
+        flash(f'Error fetching users: {str(e)}', 'error')
+        return redirect(url_for('admin_dashboard'))
 
 @app.route('/admin/logout')
 def admin_logout():
