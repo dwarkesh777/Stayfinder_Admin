@@ -94,17 +94,17 @@ body { background: #f4f6f9; }
             <div class="setting-item">
                 <label class="setting-label">Password</label>
                 <p class="text-muted mb-3">Last changed: Not available</p>
-                <button class="btn btn-outline-primary">
+                <a href="{{ url_for('change_password_request') }}" class="btn btn-outline-primary">
                     <i class="bi bi-key me-2"></i>Change Password
-                </button>
+                </a>
             </div>
             
             <div class="setting-item mt-4">
                 <label class="setting-label">Admin Key</label>
                 <p class="text-muted mb-3">Your admin key is used during login for additional security</p>
-                <button class="btn btn-outline-primary">
+                <a href="{{ url_for('update_admin_key_request') }}" class="btn btn-outline-primary">
                     <i class="bi bi-key me-2"></i>Update Admin Key
-                </button>
+                </a>
             </div>
         </div>
     </div>

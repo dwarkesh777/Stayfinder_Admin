@@ -4,8 +4,13 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from bson.objectid import ObjectId
 from functools import wraps
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
+import random
+import string
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 # Load .env File
 load_dotenv()
@@ -34,6 +39,50 @@ admins_collection = db['admins']
 hostels_collection = db['hostels']
 ratings_collection = db['ratings']
 users_collection = db['users']
+otp_collection = db['otp_requests']
+
+# Email configuration
+SMTP_SERVER = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
+SMTP_PORT = int(os.getenv('MAIL_PORT', 587))
+SENDER_EMAIL = os.getenv('MAIL_USERNAME')
+SENDER_PASSWORD = os.getenv('MAIL_PASSWORD')
+
+def send_otp_email(recipient_email, otp_code):
+    """Send OTP to email"""
+    try:
+        subject = "StayFinder Admin - OTP Verification"
+        body = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif;">
+                <h2>OTP Verification</h2>
+                <p>Your OTP code is: <strong style="font-size: 24px; color: #667eea;">{otp_code}</strong></p>
+                <p>This code will expire in 10 minutes.</p>
+                <p>If you didn't request this, please ignore this email.</p>
+            </body>
+        </html>
+        """
+        
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = subject
+        msg['From'] = SENDER_EMAIL
+        msg['To'] = recipient_email
+        
+        msg.attach(MIMEText(body, 'html'))
+        
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(SENDER_EMAIL, SENDER_PASSWORD)
+        server.sendmail(SENDER_EMAIL, recipient_email, msg.as_string())
+        server.quit()
+        
+        return True
+    except Exception as e:
+        print(f"Error sending email: {e}")
+        return False
+
+def generate_otp():
+    """Generate a 6-digit OTP"""
+    return ''.join(random.choices(string.digits, k=6))
 
 # Auth decorator
 def login_required(f):
@@ -291,6 +340,191 @@ def reject_property(hostel_id):
     except Exception as e:
         flash(f'Error rejecting property: {str(e)}', 'error')
     return redirect(url_for('admin_properties'))
+
+@app.route('/admin/change-password', methods=['GET', 'POST'])
+@login_required
+def change_password_request():
+    if request.method == 'POST':
+        admin = admins_collection.find_one({'_id': ObjectId(session['admin_id'])})
+        
+        otp_code = generate_otp()
+        admin_id = str(session['admin_id'])
+        
+        print(f"[DEBUG] Generating OTP for admin_id: {admin_id}")
+        print(f"[DEBUG] OTP Code: {otp_code}")
+        
+        # Delete any existing OTP for this admin first
+        otp_collection.delete_many({'admin_id': admin_id, 'purpose': 'change_password'})
+        
+        otp_result = otp_collection.insert_one({
+            'admin_id': admin_id,
+            'otp': otp_code,
+            'purpose': 'change_password',
+            'created_at': datetime.now(),
+            'expires_at': datetime.now() + timedelta(minutes=15)
+        })
+        
+        print(f"[DEBUG] OTP inserted with ID: {otp_result.inserted_id}")
+        
+        if send_otp_email(admin['email'], otp_code):
+            flash('OTP sent to your email', 'success')
+            session['otp_purpose'] = 'change_password'
+            return redirect(url_for('verify_otp'))
+        else:
+            flash('Error sending OTP. Please try again.', 'error')
+    
+    return render_template('change_password_request.html')
+
+@app.route('/admin/update-admin-key', methods=['GET', 'POST'])
+@login_required
+def update_admin_key_request():
+    if request.method == 'POST':
+        admin = admins_collection.find_one({'_id': ObjectId(session['admin_id'])})
+        
+        otp_code = generate_otp()
+        admin_id = str(session['admin_id'])
+        
+        print(f"[DEBUG] Generating OTP for admin_id: {admin_id}")
+        print(f"[DEBUG] OTP Code: {otp_code}")
+        
+        # Delete any existing OTP for this admin first
+        otp_collection.delete_many({'admin_id': admin_id, 'purpose': 'update_admin_key'})
+        
+        otp_result = otp_collection.insert_one({
+            'admin_id': admin_id,
+            'otp': otp_code,
+            'purpose': 'update_admin_key',
+            'created_at': datetime.now(),
+            'expires_at': datetime.now() + timedelta(minutes=15)
+        })
+        
+        print(f"[DEBUG] OTP inserted with ID: {otp_result.inserted_id}")
+        
+        if send_otp_email(admin['email'], otp_code):
+            flash('OTP sent to your email', 'success')
+            session['otp_purpose'] = 'update_admin_key'
+            return redirect(url_for('verify_otp'))
+        else:
+            flash('Error sending OTP. Please try again.', 'error')
+    
+    return render_template('update_admin_key_request.html')
+
+@app.route('/admin/verify-otp', methods=['GET', 'POST'])
+@login_required
+def verify_otp():
+    if request.method == 'POST':
+        otp_input = request.form.get('otp', '').strip()
+        purpose = session.get('otp_purpose')
+        admin_id = str(session['admin_id'])
+        
+        if not purpose:
+            flash('Session expired. Please try again.', 'error')
+            return redirect(url_for('admin_settings'))
+        
+        # Find OTP record
+        otp_doc = otp_collection.find_one({
+            'admin_id': admin_id,
+            'purpose': purpose
+        })
+        
+        print(f"[DEBUG] Looking for OTP: admin_id={admin_id}, purpose={purpose}")
+        print(f"[DEBUG] Stored OTP doc: {otp_doc}")
+        print(f"[DEBUG] User input OTP: {otp_input}")
+        
+        if otp_doc:
+            stored_otp = str(otp_doc.get('otp', '')).strip()
+            expires_at = otp_doc.get('expires_at')
+            current_time = datetime.now()
+            
+            print(f"[DEBUG] Stored OTP: '{stored_otp}', User input: '{otp_input}'")
+            print(f"[DEBUG] Expires at: {expires_at}, Current time: {current_time}")
+            print(f"[DEBUG] OTP match: {stored_otp == otp_input}, Not expired: {expires_at and expires_at > current_time}")
+            
+            # Check if OTP matches and hasn't expired
+            if stored_otp == otp_input and expires_at and expires_at > current_time:
+                otp_collection.delete_one({'_id': otp_doc['_id']})
+                session['otp_verified'] = True
+                flash('OTP verified successfully!', 'success')
+                
+                if purpose == 'change_password':
+                    return redirect(url_for('change_password_confirm'))
+                elif purpose == 'update_admin_key':
+                    return redirect(url_for('update_admin_key_confirm'))
+            elif expires_at and expires_at <= current_time:
+                otp_collection.delete_one({'_id': otp_doc['_id']})
+                flash('OTP has expired. Please request a new one.', 'error')
+                return redirect(url_for('admin_settings'))
+            else:
+                flash('Invalid OTP. Please check and try again.', 'error')
+        else:
+            print(f"[DEBUG] No OTP document found for admin_id={admin_id}, purpose={purpose}")
+            flash('No OTP request found. Please request a new one.', 'error')
+            return redirect(url_for('admin_settings'))
+    
+    purpose = session.get('otp_purpose', 'unknown')
+    return render_template('verify_otp.html', purpose=purpose)
+
+@app.route('/admin/change-password-confirm', methods=['GET', 'POST'])
+@login_required
+def change_password_confirm():
+    if not session.get('otp_verified'):
+        return redirect(url_for('change_password_request'))
+    
+    if request.method == 'POST':
+        new_password = request.form.get('new_password')
+        confirm_password = request.form.get('confirm_password')
+        
+        if new_password != confirm_password:
+            flash('Passwords do not match', 'error')
+            return render_template('change_password_confirm.html')
+        
+        if len(new_password) < 6:
+            flash('Password must be at least 6 characters', 'error')
+            return render_template('change_password_confirm.html')
+        
+        hashed_password = generate_password_hash(new_password)
+        admins_collection.update_one(
+            {'_id': ObjectId(session['admin_id'])},
+            {'$set': {'password': hashed_password, 'updated_at': datetime.now()}}
+        )
+        
+        session.pop('otp_verified', None)
+        session.pop('otp_purpose', None)
+        flash('Password changed successfully!', 'success')
+        return redirect(url_for('admin_settings'))
+    
+    return render_template('change_password_confirm.html')
+
+@app.route('/admin/update-admin-key-confirm', methods=['GET', 'POST'])
+@login_required
+def update_admin_key_confirm():
+    if not session.get('otp_verified'):
+        return redirect(url_for('update_admin_key_request'))
+    
+    if request.method == 'POST':
+        new_admin_key = request.form.get('new_admin_key')
+        confirm_admin_key = request.form.get('confirm_admin_key')
+        
+        if new_admin_key != confirm_admin_key:
+            flash('Admin keys do not match', 'error')
+            return render_template('update_admin_key_confirm.html')
+        
+        if len(new_admin_key) < 6:
+            flash('Admin key must be at least 6 characters', 'error')
+            return render_template('update_admin_key_confirm.html')
+        
+        hashed_admin_key = generate_password_hash(new_admin_key)
+        admins_collection.update_one(
+            {'_id': ObjectId(session['admin_id'])},
+            {'$set': {'admin_key': hashed_admin_key, 'updated_at': datetime.now()}}
+        )
+        
+        session.pop('otp_verified', None)
+        session.pop('otp_purpose', None)
+        flash('Admin key updated successfully!', 'success')
+        return redirect(url_for('admin_settings'))
+    
+    return render_template('update_admin_key_confirm.html')
 
 if __name__ == '__main__':
     app.run(debug=True)
