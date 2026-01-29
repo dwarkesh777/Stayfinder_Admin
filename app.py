@@ -179,6 +179,44 @@ def admin_logout():
     session.clear()
     return redirect(url_for('admin_login'))
 
+@app.route('/admin/settings')
+@login_required
+def admin_settings():
+    admin = admins_collection.find_one({'_id': ObjectId(session['admin_id'])})
+    return render_template('settings.html', admin=admin)
+
+@app.route('/admin/settings/edit-profile', methods=['GET', 'POST'])
+@login_required
+def edit_profile():
+    admin = admins_collection.find_one({'_id': ObjectId(session['admin_id'])})
+    
+    if request.method == 'POST':
+        name = request.form.get('name')
+        email = request.form.get('email')
+        
+        if not name or not email:
+            flash('Name and email are required', 'error')
+            return render_template('edit_profile.html', admin=admin)
+        
+        # Check if email is already used by another admin
+        existing_admin = admins_collection.find_one({'email': email, '_id': {'$ne': ObjectId(session['admin_id'])}})
+        if existing_admin:
+            flash('Email already registered by another account', 'error')
+            return render_template('edit_profile.html', admin=admin)
+        
+        try:
+            admins_collection.update_one(
+                {'_id': ObjectId(session['admin_id'])},
+                {'$set': {'name': name, 'email': email, 'updated_at': datetime.now()}}
+            )
+            session['admin_name'] = name
+            flash('Profile updated successfully!', 'success')
+            return redirect(url_for('admin_settings'))
+        except Exception as e:
+            flash(f'Error updating profile: {str(e)}', 'error')
+    
+    return render_template('edit_profile.html', admin=admin)
+
 @app.route('/admin/property/<hostel_id>/view')
 @login_required
 def view_property(hostel_id):
