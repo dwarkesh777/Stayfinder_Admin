@@ -1,4 +1,5 @@
-flask==3.0.0
-pymongo==4.6.1
-python-dotenv==1.0.0
-werkzeug==3.0.1
+flask
+pymongo
+python-dotenv
+werkzeug
+reportlab

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import Flask, render_template, request, redirect, url_for, session, flash, send_file
 from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash
 from bson.objectid import ObjectId
@@ -9,8 +9,13 @@ import os
 import random
 import string
 import smtplib
+import io
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
 
 # Load .env File
 load_dotenv()
@@ -83,6 +88,36 @@ def send_otp_email(recipient_email, otp_code):
 def generate_otp():
     """Generate a 6-digit OTP"""
     return ''.join(random.choices(string.digits, k=6))
+
+
+def send_email_with_attachment(recipient_email, subject, html_body, attachment_bytes, filename):
+    """Send an HTML email with a PDF attachment (bytes)"""
+    try:
+        msg = MIMEMultipart()
+        msg['Subject'] = subject
+        msg['From'] = SENDER_EMAIL
+        msg['To'] = recipient_email
+
+        # Attach HTML body
+        body_part = MIMEText(html_body, 'html')
+        msg.attach(body_part)
+
+        # Attachment
+        part = MIMEBase('application', 'pdf')
+        part.set_payload(attachment_bytes)
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', f'attachment; filename="{filename}"')
+        msg.attach(part)
+
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(SENDER_EMAIL, SENDER_PASSWORD)
+        server.sendmail(SENDER_EMAIL, recipient_email, msg.as_string())
+        server.quit()
+        return True
+    except Exception as e:
+        print(f"Error sending email with attachment: {e}")
+        return False
 
 # Auth decorator
 def login_required(f):
@@ -196,6 +231,75 @@ def admin_properties():
             prop['status'] = 'pending'
     
     return render_template('properties.html', admin=admin, properties=properties)
+
+
+@app.route('/admin/download-properties-pdf', methods=['POST'])
+@login_required
+def download_properties_pdf():
+    """Generate a PDF of all properties, email it to admin, and return it for download."""
+    try:
+        admin = admins_collection.find_one({'_id': ObjectId(session['admin_id'])})
+        properties = list(hostels_collection.find())
+
+        buffer = io.BytesIO()
+        c = canvas.Canvas(buffer, pagesize=letter)
+        width, height = letter
+        y = height - 72
+
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(72, y, "StayFinder - All Properties Report")
+        y -= 30
+        c.setFont("Helvetica", 10)
+
+        for prop in properties:
+            name = prop.get('name', 'Unnamed')
+            location = prop.get('location') or prop.get('address') or ''
+            price = prop.get('price') or prop.get('rent') or ''
+            status = prop.get('status', '')
+            ptype = prop.get('type', '')
+            gender = prop.get('gender', '')
+            amenities = prop.get('amenities', [])
+            if isinstance(amenities, list):
+                amenities = ', '.join(amenities[:10])
+            lines = [
+                f"Name: {name}",
+                f"Location: {location}",
+                f"Price: {price}",
+                f"Type: {ptype}",
+                f"Gender: {gender}",
+                f"Status: {status}",
+                f"Amenities: {amenities}",
+                "--------------------------------------------------------------------------------",
+            ]
+
+            for line in lines:
+                c.drawString(72, y, str(line))
+                y -= 14
+                if y < 72:
+                    c.showPage()
+                    y = height - 72
+                    c.setFont("Helvetica", 10)
+
+        c.save()
+        buffer.seek(0)
+        pdf_bytes = buffer.getvalue()
+
+        # Email to admin (if configured)
+        admin_email = admin.get('email') if admin and admin.get('email') else SENDER_EMAIL
+        subject = 'StayFinder - Properties Report'
+        html_body = f"<p>Hi {admin.get('name', 'Admin')},</p><p>Attached is the properties report (PDF).</p>"
+        email_sent = False
+        try:
+            email_sent = send_email_with_attachment(admin_email, subject, html_body, pdf_bytes, 'properties_report.pdf')
+            print(f"[DEBUG] Email sent status: {email_sent} to {admin_email}")
+        except Exception as e:
+            print(f"[DEBUG] Error while attempting to send email: {e}")
+
+        # Return PDF for download
+        return send_file(io.BytesIO(pdf_bytes), mimetype='application/pdf', as_attachment=True, download_name='properties_report.pdf')
+    except Exception as e:
+        flash(f'Error generating PDF: {str(e)}', 'error')
+        return redirect(url_for('admin_properties'))
 
 
 @app.route('/admin/users')
