@@ -229,9 +229,9 @@ body {
                             <span class="price-discounted">₹{{ property.price or property.rent or 0 }}/-</span>
                             <small class="text-muted d-block">Monthly Rent</small>
                         </div>
-                        <button class="btn btn-outline-primary btn-sm">
+                        <a href="{{ url_for('view_property', hostel_id=property.id) }}" class="btn btn-outline-primary btn-sm">
                             <i class="bi bi-eye"></i> View
-                        </button>
+                        </a>
                     </div>
                     
                     {% if property.status == 'approved' %}

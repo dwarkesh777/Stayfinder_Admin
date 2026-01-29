@@ -151,6 +151,37 @@ def admin_logout():
     session.clear()
     return redirect(url_for('admin_login'))
 
+@app.route('/admin/property/<hostel_id>/view')
+@login_required
+def view_property(hostel_id):
+    try:
+        hostel_id_obj = ObjectId(hostel_id)
+        property_data = hostels_collection.find_one({'_id': hostel_id_obj})
+        
+        if property_data:
+            # Fetch ratings for this property
+            hostel_ratings = list(ratings_collection.find({'$or': [{'hostelId': hostel_id_obj}, {'hostelId': str(hostel_id_obj)}]}))
+            if hostel_ratings:
+                total_rating = sum(r.get('rating', 0) for r in hostel_ratings)
+                property_data['avgRating'] = round(total_rating / len(hostel_ratings), 1)
+                property_data['reviewCount'] = len(hostel_ratings)
+                property_data['allReviews'] = hostel_ratings
+            else:
+                property_data['avgRating'] = 0
+                property_data['reviewCount'] = 0
+                property_data['allReviews'] = []
+            
+            # Expose string id for templates
+            property_data['id'] = str(hostel_id_obj)
+            
+            admin = admins_collection.find_one({'_id': ObjectId(session['admin_id'])})
+            return render_template('property_detail.html', admin=admin, property=property_data)
+        else:
+            flash('Property not found', 'error')
+            return redirect(url_for('admin_properties'))
+    except Exception as e:
+        flash(f'Error fetching property: {str(e)}', 'error')
+        return redirect(url_for('admin_properties'))
 
 @app.route('/api/ratings/<hostel_id>')
 def api_ratings(hostel_id):
