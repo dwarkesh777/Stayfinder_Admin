@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 import os
 
-# Load .env file
+# Load .env File
 load_dotenv()
 
 app = Flask(__name__)
