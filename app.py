@@ -445,6 +445,31 @@ def reject_property(hostel_id):
         flash(f'Error rejecting property: {str(e)}', 'error')
     return redirect(url_for('admin_properties'))
 
+
+@app.route('/admin/property/<hostel_id>/delete', methods=['POST'])
+@login_required
+def delete_property(hostel_id):
+    try:
+        # Attempt to convert to ObjectId and delete the property
+        try:
+            hostel_id_obj = ObjectId(hostel_id)
+        except Exception:
+            hostel_id_obj = None
+
+        if hostel_id_obj:
+            hostels_collection.delete_one({'_id': hostel_id_obj})
+            # Remove associated ratings if any
+            ratings_collection.delete_many({'$or': [{'hostelId': hostel_id_obj}, {'hostelId': str(hostel_id_obj)}]})
+        else:
+            # Fallback: try deleting by string id field
+            hostels_collection.delete_one({'_id': hostel_id})
+            ratings_collection.delete_many({'$or': [{'hostelId': hostel_id}, {'hostelId': str(hostel_id)}]})
+
+        flash('Property deleted successfully!', 'success')
+    except Exception as e:
+        flash(f'Error deleting property: {str(e)}', 'error')
+    return redirect(url_for('admin_properties'))
+
 @app.route('/admin/change-password', methods=['GET', 'POST'])
 @login_required
 def change_password_request():
